@@ -14,7 +14,84 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      config: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      offers: {
+        Row: {
+          category: string
+          created_at: string
+          data_amount: string
+          id: string
+          is_active: boolean
+          minutes: number
+          operator: string
+          original_price: number
+          region: string
+          selling_price: number
+          title: string
+          updated_at: string
+          validity_days: number
+          whatsapp_number: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          data_amount: string
+          id?: string
+          is_active?: boolean
+          minutes?: number
+          operator: string
+          original_price: number
+          region: string
+          selling_price: number
+          title: string
+          updated_at?: string
+          validity_days: number
+          whatsapp_number: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          data_amount?: string
+          id?: string
+          is_active?: boolean
+          minutes?: number
+          operator?: string
+          original_price?: number
+          region?: string
+          selling_price?: number
+          title?: string
+          updated_at?: string
+          validity_days?: number
+          whatsapp_number?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
