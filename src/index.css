@@ -166,7 +166,7 @@
   }
 
   .stats-text {
-    @apply text-text-muted text-sm;
+    @apply text-muted-foreground text-sm;
   }
 
   .balance-display {
