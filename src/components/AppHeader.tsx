@@ -1,11 +1,20 @@
-import { Smartphone, ShoppingCart } from "lucide-react";
+import { Smartphone, Heart, GitCompare } from "lucide-react";
 
 interface AppHeaderProps {
   balance: number;
-  cartItems?: number;
+  favoriteCount?: number;
+  comparisonCount?: number;
+  onFavoritesClick?: () => void;
+  onComparisonClick?: () => void;
 }
 
-const AppHeader = ({ balance, cartItems = 0 }: AppHeaderProps) => {
+const AppHeader = ({
+  balance,
+  favoriteCount = 0,
+  comparisonCount = 0,
+  onFavoritesClick,
+  onComparisonClick,
+}: AppHeaderProps) => {
   return (
     <header className="bg-background border-b border-border px-4 py-4">
       <div className="flex items-center justify-between">
@@ -15,21 +24,50 @@ const AppHeader = ({ balance, cartItems = 0 }: AppHeaderProps) => {
           <p className="body-sm text-muted">সবচেয়ে কম দামে সিম অফার</p>
         </div>
 
-        {/* Balance and Cart */}
+        {/* Balance and Actions */}
         <div className="flex items-center gap-3">
           <div className="balance-display">
             <Smartphone size={14} />
             <span>৳{balance.toLocaleString()}</span>
           </div>
-          
-          <div className="relative">
-            <ShoppingCart size={18} className="text-muted-foreground" />
-            {cartItems > 0 && (
-              <span className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                {cartItems}
+
+          {/* Favorites */}
+          <button
+            onClick={onFavoritesClick}
+            className="relative p-1 hover:bg-muted rounded-md transition-colors"
+          >
+            <Heart
+              size={18}
+              className={
+                favoriteCount > 0
+                  ? "text-red-500 fill-red-500"
+                  : "text-muted-foreground"
+              }
+            />
+            {favoriteCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                {favoriteCount}
               </span>
             )}
-          </div>
+          </button>
+
+          {/* Comparison */}
+          <button
+            onClick={onComparisonClick}
+            className="relative p-1 hover:bg-muted rounded-md transition-colors"
+          >
+            <GitCompare
+              size={18}
+              className={
+                comparisonCount > 0 ? "text-blue-500" : "text-muted-foreground"
+              }
+            />
+            {comparisonCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                {comparisonCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </header>
