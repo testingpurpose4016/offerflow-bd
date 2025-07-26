@@ -6,126 +6,18 @@ import OfferCard from "@/components/OfferCard";
 import OfferCardSkeleton from "@/components/OfferCardSkeleton";
 import EmptyState from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
-
-// Sample data - In real app, this would come from API
-const sampleOffers = [
-  {
-    id: 1,
-    operator: "GP",
-    title: "50GB + 1500 Minutes Bundle",
-    data_amount: "50GB",
-    minutes: 1500,
-    validity_days: 30,
-    selling_price: 775,
-    original_price: 900,
-    region: "All Bangladesh",
-    category: "combo",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 2,
-    operator: "GP", 
-    title: "120GB + 1800 Minutes Bundle",
-    data_amount: "120GB",
-    minutes: 1800,
-    validity_days: 30,
-    selling_price: 830,
-    original_price: 1000,
-    region: "All Bangladesh",
-    category: "combo",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 3,
-    operator: "Skitto",
-    title: "5GB Data Pack",
-    data_amount: "5GB",
-    minutes: 0,
-    validity_days: 7,
-    selling_price: 160,
-    original_price: 200,
-    region: "All Bangladesh",
-    category: "internet",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 4,
-    operator: "Skitto",
-    title: "10GB Data Pack",
-    data_amount: "10GB",
-    minutes: 0,
-    validity_days: 15,
-    selling_price: 240,
-    original_price: 300,
-    region: "All Bangladesh",
-    category: "internet",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 5,
-    operator: "Banglalink",
-    title: "150GB Data Pack",
-    data_amount: "150GB",
-    minutes: 0,
-    validity_days: 30,
-    selling_price: 640,
-    original_price: 750,
-    region: "Dhaka/Chittagong",
-    category: "internet",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 6,
-    operator: "Airtel",
-    title: "125GB Data Pack",
-    data_amount: "125GB", 
-    minutes: 0,
-    validity_days: 30,
-    selling_price: 650,
-    original_price: 750,
-    region: "All Bangladesh",
-    category: "internet",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  },
-  {
-    id: 7,
-    operator: "Robi",
-    title: "5GB Data Pack",
-    data_amount: "5GB",
-    minutes: 0,
-    validity_days: 7,
-    selling_price: 110,
-    original_price: 150,
-    region: "All Bangladesh",
-    category: "internet",
-    whatsapp_number: "8801712345678",
-    is_active: true
-  }
-];
+import { useOffers, type Offer } from "@/hooks/useOffers";
+import { useConfig } from "@/hooks/useConfig";
 
 const Index = () => {
-  const [offers, setOffers] = useState(sampleOffers);
-  const [filteredOffers, setFilteredOffers] = useState(sampleOffers);
+  const { offers, isLoading, refreshOffers } = useOffers();
+  const { config } = useConfig();
+  const [filteredOffers, setFilteredOffers] = useState<Offer[]>([]);
   const [activeFilter, setActiveFilter] = useState("all");
-  const [isLoading, setIsLoading] = useState(true);
   const [balance] = useState(1250);
   const { toast } = useToast();
 
-  // Simulate loading
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Filter offers based on selected operator
+  // Update filtered offers when offers or filter changes
   useEffect(() => {
     if (activeFilter === "all") {
       setFilteredOffers(offers);
@@ -144,7 +36,7 @@ const Index = () => {
     Skitto: offers.filter(o => o.operator === "Skitto").length,
   };
 
-  const handleWhatsAppOrder = (offer: typeof sampleOffers[0]) => {
+  const handleWhatsAppOrder = (offer: Offer) => {
     const message = encodeURIComponent(
       `আসসালামু আলাইকুম! আমি এই অফারটি নিতে চাই:\n\n${offer.title}\n📱 অপারেটর: ${offer.operator}\n💰 দাম: ৳${offer.selling_price}\n\nঅনুগ্রহ করে আমাকে পরবর্তী ধাপ জানান।`
     );
@@ -156,7 +48,7 @@ const Index = () => {
     });
   };
 
-  const handlePhoneOrder = (offer: typeof sampleOffers[0]) => {
+  const handlePhoneOrder = (offer: Offer) => {
     window.open(`tel:+${offer.whatsapp_number}`);
     
     toast({
@@ -170,14 +62,11 @@ const Index = () => {
   };
 
   const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      toast({
-        title: "Refreshed",
-        description: "Offers updated successfully",
-      });
-    }, 1000);
+    refreshOffers();
+    toast({
+      title: "Refreshed",
+      description: "Offers updated successfully",
+    });
   };
 
   return (
@@ -230,10 +119,10 @@ const Index = () => {
       {/* Footer */}
       <footer className="px-4 py-6 text-center border-t border-border mt-8">
         <p className="body-sm text-muted">
-          © 2024 রিয়েলদের সিম অফার। All rights reserved.
+          © 2024 {config.company_name || 'রিয়েলদের সিম অফার'}। All rights reserved.
         </p>
         <p className="body-sm text-muted mt-1">
-          📞 Support: +880171234567 | 📧 support@realdeals.com
+          📞 Support: {config.support_phone || '+880171234567'} | 📧 {config.support_email || 'support@realdeals.com'}
         </p>
       </footer>
     </div>

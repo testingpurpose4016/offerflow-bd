@@ -1,18 +1,20 @@
 import { Phone, MessageCircle } from "lucide-react";
 
 interface Offer {
-  id: number;
+  id: string;
   operator: string;
   title: string;
   data_amount: string;
   minutes: number;
   validity_days: number;
   selling_price: number;
-  original_price?: number;
-  region?: string;
+  original_price: number;
+  region: string;
   category: string;
   whatsapp_number: string;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 interface OfferCardProps {

@@ -1,72 +1,88 @@
-import { useState, useRef } from "react";
-import { Upload, Download, FileText, Trash2, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Upload, FileText, CheckCircle, XCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useConfig } from "@/hooks/useConfig";
+import { useState } from "react";
 
 interface ParsedOffer {
   operator: string;
   title: string;
   data_amount: string;
   minutes: number;
+  validity_days: number;
   selling_price: number;
-  original_price?: number;
+  original_price: number;
+  region: string;
   category: string;
-  region?: string;
+  whatsapp_number: string;
 }
 
 const AdminPanel = () => {
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedOffers, setParsedOffers] = useState<ParsedOffer[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const sampleCsvFormat = `operator,title,data_amount,minutes,selling_price,original_price,category,region
-GP,50GB + 1500 Minutes Bundle,50GB,1500,775,900,combo,All Bangladesh
-Robi,10GB Data Pack,10GB,0,240,300,internet,All Bangladesh
-Banglalink,150GB Data Pack,150GB,0,640,750,internet,Dhaka/Chittagong`;
+  const [isUploading, setIsUploading] = useState(false);
+  const { toast } = useToast();
+  const { config } = useConfig();
 
   const handleFileSelect = (file: File) => {
-    setCsvFile(file);
+    setSelectedFile(file);
     parseCSV(file);
   };
 
-  const parseCSV = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        const lines = text.split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
-        
-        const offers: ParsedOffer[] = lines.slice(1)
-          .filter(line => line.trim())
-          .map(line => {
-            const values = line.split(',').map(v => v.trim());
-            return {
-              operator: values[0] || '',
-              title: values[1] || '',
-              data_amount: values[2] || '',
-              minutes: parseInt(values[3]) || 0,
-              selling_price: parseInt(values[4]) || 0,
-              original_price: values[5] ? parseInt(values[5]) : undefined,
-              category: values[6] || 'internet',
-              region: values[7] || 'All Bangladesh'
-            };
-          });
-
-        setParsedOffers(offers);
-        setUploadStatus(`Parsed ${offers.length} offers successfully`);
-      } catch (error) {
-        setUploadStatus('Error parsing CSV file');
-        console.error('CSV parsing error:', error);
-      }
-    };
-    reader.readAsText(file);
+  const parseCSV = (file: File): Promise<ParsedOffer[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const csv = e.target?.result as string;
+          const lines = csv.split('\n');
+          const headers = lines[0].split(',').map(h => h.trim());
+          
+          const offers: ParsedOffer[] = [];
+          
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line) {
+              const values = line.split(',').map(v => v.trim());
+              const offer: ParsedOffer = {
+                operator: values[0] || '',
+                title: values[1] || '',
+                data_amount: values[2] || '',
+                minutes: parseInt(values[3]) || 0,
+                validity_days: parseInt(values[4]) || 0,
+                selling_price: parseInt(values[5]) || 0,
+                original_price: parseInt(values[6]) || 0,
+                region: values[7] || '',
+                category: values[8] || '',
+                whatsapp_number: values[9] || config.default_whatsapp || '8801712345678'
+              };
+              offers.push(offer);
+            }
+          }
+          
+          setParsedOffers(offers);
+          setUploadStatus(`Parsed ${offers.length} offers successfully`);
+          resolve(offers);
+        } catch (error) {
+          setUploadStatus('Error parsing CSV file');
+          reject(new Error('Failed to parse CSV file'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    const csvFile = files.find(file => file.type === 'text/csv' || file.name.endsWith('.csv'));
+    const csvFile = files.find(file => 
+      file.type === 'text/csv' || file.name.endsWith('.csv')
+    );
     if (csvFile) {
       handleFileSelect(csvFile);
     }
@@ -80,164 +96,230 @@ Banglalink,150GB Data Pack,150GB,0,640,750,internet,Dhaka/Chittagong`;
   };
 
   const uploadToDatabase = async () => {
+    if (parsedOffers.length === 0) {
+      toast({
+        title: "Error",
+        description: "No offers to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsUploading(true);
+    setUploadStatus("Uploading to database...");
+    
     try {
-      // Simulate upload delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setUploadStatus(`Successfully uploaded ${parsedOffers.length} offers to database!`);
-      setParsedOffers([]);
-      setCsvFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      const { error } = await supabase
+        .from('offers')
+        .insert(parsedOffers.map(offer => ({
+          ...offer,
+          is_active: true
+        })));
+
+      if (error) {
+        throw error;
       }
+
+      // Reset state after successful upload
+      setParsedOffers([]);
+      setSelectedFile(null);
+      setUploadStatus("Successfully uploaded to database!");
+      
+      toast({
+        title: "Success",
+        description: `${parsedOffers.length} offers uploaded successfully!`,
+      });
+      
     } catch (error) {
-      setUploadStatus('Error uploading to database');
+      console.error('Upload error:', error);
+      setUploadStatus("Upload failed!");
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Upload failed",
+        variant: "destructive",
+      });
     } finally {
       setIsUploading(false);
+      // Clear status message after 3 seconds
+      setTimeout(() => setUploadStatus(""), 3000);
     }
   };
 
   const clearData = () => {
     setParsedOffers([]);
-    setCsvFile(null);
+    setSelectedFile(null);
     setUploadStatus("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4">
-        {/* Header */}
-        <div className="admin-card mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-900">Admin Panel - SIM Offer Manager</h1>
-            <div className="flex items-center gap-4 text-sm text-gray-600">
-              <span>Total Active Offers: 24</span>
-              <span>Last Updated: 2 hours ago</span>
-            </div>
-          </div>
-        </div>
+    <div className="mobile-container min-h-screen bg-background">
+      {/* Header */}
+      <div className="border-b border-border p-4">
+        <h1 className="heading-lg text-foreground">Admin Panel</h1>
+        <p className="body-sm text-muted mt-1">Manage SIM offers and upload data</p>
+      </div>
 
-        {/* CSV Upload Section */}
-        <div className="admin-card mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Upload size={20} />
-            Upload CSV File
-          </h2>
-
-          <div
-            className="upload-zone mb-6"
-            onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <FileText size={48} className="mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-700 mb-2">
-              {csvFile ? csvFile.name : "Drag CSV file here or click to browse"}
-            </h3>
-            <p className="text-gray-500">Support for .csv files up to 10MB</p>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFileInput}
-            className="hidden"
-          />
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+      <div className="p-4 space-y-6">
+        {/* CSV Upload Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5" />
+              Upload CSV File
+            </CardTitle>
+            <CardDescription>
+              Upload a CSV file containing offer data to add new offers to the database
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* File Drop Zone */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
+              onClick={() => document.getElementById('csvFileInput')?.click()}
             >
-              <Plus size={16} />
-              Select File
-            </button>
-            
-            <button
-              onClick={clearData}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <Trash2 size={16} />
-              Clear
-            </button>
-          </div>
-
-          {uploadStatus && (
-            <div className={`mt-4 p-3 rounded-lg ${
-              uploadStatus.includes('Error') 
-                ? 'bg-red-100 text-red-700 border border-red-200'
-                : 'bg-green-100 text-green-700 border border-green-200'
-            }`}>
-              {uploadStatus}
+              <FileText className="h-12 w-12 mx-auto text-muted mb-2" />
+              <p className="body-md text-foreground mb-1">
+                {selectedFile ? selectedFile.name : 'Drag and drop CSV file here'}
+              </p>
+              <p className="body-sm text-muted">
+                or click to browse files
+              </p>
             </div>
-          )}
-        </div>
 
-        {/* Sample CSV Format */}
-        <div className="admin-card mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Download size={18} />
-            Sample CSV Format
-          </h3>
-          <pre className="bg-gray-100 p-4 rounded-lg text-sm text-gray-800 overflow-x-auto">
-            {sampleCsvFormat}
-          </pre>
-        </div>
+            <Input
+              id="csvFileInput"
+              type="file"
+              accept=".csv"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+
+            <div className="flex gap-2">
+              <Button
+                onClick={() => document.getElementById('csvFileInput')?.click()}
+                variant="outline"
+                className="flex-1"
+              >
+                Select File
+              </Button>
+              <Button
+                onClick={clearData}
+                variant="outline"
+                disabled={!selectedFile && parsedOffers.length === 0}
+              >
+                Clear
+              </Button>
+            </div>
+
+            {/* Upload Status */}
+            {uploadStatus && (
+              <div className={`p-3 rounded-lg border flex items-center gap-2 ${
+                uploadStatus.includes('Error') || uploadStatus.includes('failed')
+                  ? 'bg-destructive/10 border-destructive text-destructive'
+                  : 'bg-success/10 border-success text-success'
+              }`}>
+                {uploadStatus.includes('Error') || uploadStatus.includes('failed') ? (
+                  <XCircle className="h-4 w-4" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                <span className="body-sm">{uploadStatus}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Sample Format */}
+        <Card>
+          <CardHeader>
+            <CardTitle>CSV Format Guide</CardTitle>
+            <CardDescription>
+              Use this format for your CSV file
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p><strong>Sample CSV format:</strong></p>
+              <code className="text-sm bg-muted p-2 rounded block mt-2">
+                operator,title,data_amount,minutes,validity_days,selling_price,original_price,region,category,whatsapp_number<br />
+                GP,50GB Bundle,50GB,1500,30,775,900,All Bangladesh,combo,8801712345678
+              </code>
+              <p className="body-sm text-muted mt-2">
+                Note: WhatsApp number is optional. If not provided, the default number will be used.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Parsed Results */}
         {parsedOffers.length > 0 && (
-          <div className="admin-card">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Parsed Results ({parsedOffers.length} offers)
-              </h3>
-              <button
-                onClick={uploadToDatabase}
-                disabled={isUploading}
-                className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isUploading ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Upload size={16} />
-                )}
-                {isUploading ? 'Uploading...' : 'Upload to Database'}
-              </button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {parsedOffers.map((offer, index) => (
-                <div key={index} className="bg-white border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                      {offer.operator}
-                    </span>
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
-                      {offer.category}
-                    </span>
-                  </div>
-                  <h4 className="font-medium text-gray-900 mb-1">{offer.title}</h4>
-                  <p className="text-sm text-gray-600 mb-2">
-                    {offer.data_amount}
-                    {offer.minutes > 0 && ` + ${offer.minutes} min`}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      {offer.original_price && (
-                        <span className="text-xs text-gray-500 line-through">৳{offer.original_price}</span>
-                      )}
-                      <span className="text-sm font-bold text-green-600 ml-1">৳{offer.selling_price}</span>
-                    </div>
-                    <span className="text-xs text-gray-500">{offer.region}</span>
-                  </div>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Parsed Offers ({parsedOffers.length})</CardTitle>
+                  <CardDescription>
+                    Review the offers before uploading to database
+                  </CardDescription>
                 </div>
-              ))}
-            </div>
-          </div>
+                <Button
+                  onClick={uploadToDatabase}
+                  disabled={isUploading}
+                  className="min-w-[120px]"
+                >
+                  {isUploading ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Uploading...
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload to DB
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2 border-b">Operator</th>
+                      <th className="text-left p-2 border-b">Title</th>
+                      <th className="text-left p-2 border-b">Data</th>
+                      <th className="text-left p-2 border-b">Minutes</th>
+                      <th className="text-left p-2 border-b">Validity</th>
+                      <th className="text-left p-2 border-b">Price</th>
+                      <th className="text-left p-2 border-b">Original</th>
+                      <th className="text-left p-2 border-b">Region</th>
+                      <th className="text-left p-2 border-b">Category</th>
+                      <th className="text-left p-2 border-b">WhatsApp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedOffers.map((offer, index) => (
+                      <tr key={index} className="border-b">
+                        <td className="p-2 border-b">{offer.operator}</td>
+                        <td className="p-2 border-b">{offer.title}</td>
+                        <td className="p-2 border-b">{offer.data_amount}</td>
+                        <td className="p-2 border-b">{offer.minutes}</td>
+                        <td className="p-2 border-b">{offer.validity_days}d</td>
+                        <td className="p-2 border-b">৳{offer.selling_price}</td>
+                        <td className="p-2 border-b">৳{offer.original_price}</td>
+                        <td className="p-2 border-b">{offer.region}</td>
+                        <td className="p-2 border-b">{offer.category}</td>
+                        <td className="p-2 border-b">{offer.whatsapp_number}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>
