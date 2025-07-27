@@ -168,9 +168,10 @@ export const API_ENDPOINTS = {
 // Local Storage Keys
 export const STORAGE_KEYS = {
   FAVORITES: "sim-offers-favorites",
-  COMPARISON: "sim-offers-comparison", 
+  COMPARISON: "sim-offers-comparison",
   FILTERS: "sim-offers-filters",
   THEME: "sim-offers-theme",
+  VISITED: "sim-offers-visited",
 } as const;
 
 // Validation Rules

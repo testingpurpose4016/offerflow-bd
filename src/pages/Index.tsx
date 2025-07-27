@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import AppHeader from "@/components/AppHeader";
+import LandingHero from "@/components/LandingHero";
 import FilterTabs from "@/components/FilterTabs";
 import StatsBar from "@/components/StatsBar";
 import OfferCard from "@/components/OfferCard";
@@ -11,6 +12,7 @@ import FavoritesModal from "@/components/FavoritesModal";
 import { useToast } from "@/hooks/use-toast";
 import { useOffers, type Offer } from "@/hooks/useOffers";
 import { useConfig } from "@/hooks/useConfig";
+import { STORAGE_KEYS } from "@/constants";
 import {
   getFavorites,
   addToFavorites,
@@ -42,6 +44,11 @@ const Index = () => {
   const [comparison, setComparison] = useState<string[]>([]);
   const [showComparisonModal, setShowComparisonModal] = useState(false);
   const [showFavoritesModal, setShowFavoritesModal] = useState(false);
+  const [showLanding, setShowLanding] = useState(() => {
+    // Check if user has visited before
+    const hasVisited = localStorage.getItem(STORAGE_KEYS.VISITED);
+    return !hasVisited;
+  });
 
   // Load favorites and comparison from localStorage
   useEffect(() => {
@@ -232,6 +239,33 @@ const Index = () => {
     comparison.includes(offer.id),
   );
 
+  // Calculate stats for landing page
+  const avgSavings = useMemo(() => {
+    if (offers.length === 0) return 150;
+    const totalSavings = offers.reduce((sum, offer) => {
+      const savings = (offer.original_price || offer.selling_price * 1.2) - offer.selling_price;
+      return sum + savings;
+    }, 0);
+    return Math.round(totalSavings / offers.length);
+  }, [offers]);
+
+  const handleGetStarted = () => {
+    // Mark user as visited
+    localStorage.setItem(STORAGE_KEYS.VISITED, 'true');
+    setShowLanding(false);
+  };
+
+  // Show landing page for first-time visitors
+  if (showLanding && !isLoading) {
+    return (
+      <LandingHero
+        onGetStarted={handleGetStarted}
+        totalOffers={offers.length}
+        avgSavings={avgSavings}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -241,6 +275,7 @@ const Index = () => {
         comparisonCount={comparison.length}
         onFavoritesClick={() => setShowFavoritesModal(true)}
         onComparisonClick={() => setShowComparisonModal(true)}
+        onHomeClick={() => setShowLanding(true)}
       />
 
       <div className="px-3 py-2 space-y-3">

@@ -1,4 +1,6 @@
-import { Smartphone, Heart, GitCompare } from "lucide-react";
+import { Smartphone, Heart, GitCompare, Home } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import UserPreferences from "@/components/UserPreferences";
 
 interface AppHeaderProps {
   balance: number;
@@ -6,6 +8,7 @@ interface AppHeaderProps {
   comparisonCount?: number;
   onFavoritesClick?: () => void;
   onComparisonClick?: () => void;
+  onHomeClick?: () => void;
 }
 
 const AppHeader = ({
@@ -14,10 +17,23 @@ const AppHeader = ({
   comparisonCount = 0,
   onFavoritesClick,
   onComparisonClick,
+  onHomeClick,
 }: AppHeaderProps) => {
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-4 sticky top-0 z-50 backdrop-blur-sm shadow-sm">
       <div className="flex items-center justify-between">
+        {/* Home Button */}
+        {onHomeClick && (
+          <Button
+            onClick={onHomeClick}
+            variant="ghost"
+            size="sm"
+            className="mr-3 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+          >
+            <Home size={18} />
+          </Button>
+        )}
+
         {/* App Title */}
         <div className="flex-1">
           <h1 className="text-xl font-bold text-gray-900 text-center sm:text-left">রিয়েলদের সিম অফার</h1>
@@ -31,6 +47,9 @@ const AppHeader = ({
             <span className="hidden sm:inline">৳{balance.toLocaleString()}</span>
             <span className="sm:hidden">৳{balance}</span>
           </div>
+
+          {/* User Preferences */}
+          <UserPreferences />
 
           {/* Favorites */}
           {/* <button
