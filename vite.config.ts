@@ -10,11 +10,11 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     // @ts-ignore
-    allowedHosts: process.env.TEMPO === "true" ? true : undefined,
+    allowedHosts: undefined,
   },
   plugins: [
     react(),
-    tempo(),
+    mode === "development" && tempo(),
     mode === "development" && componentTagger(),
   ].filter(Boolean),
   resolve: {

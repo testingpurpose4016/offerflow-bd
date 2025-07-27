@@ -1,11 +1,17 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, CheckCircle, XCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Upload, FileText, CheckCircle, XCircle, Download, Filter, X, SlidersHorizontal, AlertTriangle, Info, Eye, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useConfig } from "@/hooks/useConfig";
+import { useOffers } from "@/hooks/useOffers";
+import { exportToCSV } from "@/lib/utils";
 import { useState } from "react";
+import { CSV_HEADERS, CSV_TEMPLATE, ERROR_MESSAGES, SUCCESS_MESSAGES, OPERATORS, VALIDATION } from "@/constants";
 
 interface ParsedOffer {
   operator: string;
@@ -14,10 +20,18 @@ interface ParsedOffer {
   minutes: number;
   validity_days: number;
   selling_price: number;
-  original_price: number;
-  region: string;
-  category: string;
-  whatsapp_number: string;
+  original_price?: number;
+  region?: string;
+  category?: string;
+  whatsapp_number?: string;
+  description?: string;
+}
+
+interface ValidationError {
+  row: number;
+  field: string;
+  value: any;
+  message: string;
 }
 
 const AdminPanel = () => {
@@ -25,8 +39,116 @@ const AdminPanel = () => {
   const [parsedOffers, setParsedOffers] = useState<ParsedOffer[]>([]);
   const [uploadStatus, setUploadStatus] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
   const { config } = useConfig();
+  const { offers } = useOffers();
+
+  // Admin functions
+  const handleExportCSV = () => {
+    exportToCSV(offers, "all-offers");
+    toast({
+      title: SUCCESS_MESSAGES.DATA_EXPORTED,
+      description: `${offers.length} offers exported to CSV`,
+    });
+  };
+
+  const handleClearAllFilters = () => {
+    // This would reset all filters in the main app
+    toast({
+      title: SUCCESS_MESSAGES.FILTERS_CLEARED,
+      description: "All filters have been reset",
+    });
+  };
+
+  const downloadCSVTemplate = () => {
+    const csvContent = [
+      CSV_TEMPLATE.headers.join(','),
+      ...CSV_TEMPLATE.sampleData.map(row =>
+        CSV_TEMPLATE.headers.map(header =>
+          typeof row[header as keyof typeof row] === 'string'
+            ? `"${row[header as keyof typeof row]}"`
+            : row[header as keyof typeof row]
+        ).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sim-offers-template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: "Template Downloaded",
+      description: "CSV template downloaded successfully",
+    });
+  };
+
+  const validateCSVData = (data: any[]): ValidationError[] => {
+    const errors: ValidationError[] = [];
+
+    data.forEach((row, index) => {
+      // Check required fields
+      CSV_HEADERS.REQUIRED.forEach(field => {
+        if (!row[field] || row[field].toString().trim() === '') {
+          errors.push({
+            row: index + 1,
+            field,
+            value: row[field],
+            message: `${field} is required`
+          });
+        }
+      });
+
+      // Validate operator
+      if (row.operator && !Object.values(OPERATORS).includes(row.operator)) {
+        errors.push({
+          row: index + 1,
+          field: 'operator',
+          value: row.operator,
+          message: `Invalid operator. Must be one of: ${Object.values(OPERATORS).join(', ')}`
+        });
+      }
+
+      // Validate price
+      if (row.selling_price && (isNaN(row.selling_price) || row.selling_price < VALIDATION.MIN_PRICE || row.selling_price > VALIDATION.MAX_PRICE)) {
+        errors.push({
+          row: index + 1,
+          field: 'selling_price',
+          value: row.selling_price,
+          message: `Price must be between ${VALIDATION.MIN_PRICE} and ${VALIDATION.MAX_PRICE}`
+        });
+      }
+
+      // Validate validity
+      if (row.validity_days && (isNaN(row.validity_days) || row.validity_days < VALIDATION.MIN_VALIDITY || row.validity_days > VALIDATION.MAX_VALIDITY)) {
+        errors.push({
+          row: index + 1,
+          field: 'validity_days',
+          value: row.validity_days,
+          message: `Validity must be between ${VALIDATION.MIN_VALIDITY} and ${VALIDATION.MAX_VALIDITY} days`
+        });
+      }
+
+      // Validate title length
+      if (row.title && row.title.length > VALIDATION.MAX_TITLE_LENGTH) {
+        errors.push({
+          row: index + 1,
+          field: 'title',
+          value: row.title,
+          message: `Title must be less than ${VALIDATION.MAX_TITLE_LENGTH} characters`
+        });
+      }
+    });
+
+    return errors;
+  };
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -39,40 +161,84 @@ const AdminPanel = () => {
       reader.onload = (e) => {
         try {
           const csv = e.target?.result as string;
-          const lines = csv.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          
-          const offers: ParsedOffer[] = [];
-          
+          const lines = csv.split('\n').filter(line => line.trim());
+
+          if (lines.length < 2) {
+            throw new Error('CSV file must contain at least a header row and one data row');
+          }
+
+          // Parse headers
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+          setCsvHeaders(headers);
+
+          // Check for required headers
+          const missingHeaders = CSV_HEADERS.REQUIRED.filter(required =>
+            !headers.some(header => header.toLowerCase() === required.toLowerCase())
+          );
+
+          if (missingHeaders.length > 0) {
+            throw new Error(`Missing required headers: ${missingHeaders.join(', ')}`);
+          }
+
+          // Parse data rows
+          const rawData: any[] = [];
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (line) {
-              const values = line.split(',').map(v => v.trim());
-              const offer: ParsedOffer = {
-                operator: values[0] || '',
-                title: values[1] || '',
-                data_amount: values[2] || '',
-                minutes: parseInt(values[3]) || 0,
-                validity_days: parseInt(values[4]) || 0,
-                selling_price: parseInt(values[5]) || 0,
-                original_price: parseInt(values[6]) || 0,
-                region: values[7] || '',
-                category: values[8] || '',
-                whatsapp_number: values[9] || config.default_whatsapp || '8801712345678'
-              };
-              offers.push(offer);
+              const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+              const rowData: any = {};
+
+              headers.forEach((header, index) => {
+                rowData[header.toLowerCase()] = values[index] || '';
+              });
+
+              rawData.push(rowData);
             }
           }
-          
+
+          // Validate data
+          const errors = validateCSVData(rawData);
+          setValidationErrors(errors);
+
+          if (errors.length > 0) {
+            setUploadStatus(`Found ${errors.length} validation errors. Please fix them before uploading.`);
+          }
+
+          // Convert to ParsedOffer format
+          const offers: ParsedOffer[] = rawData.map(row => ({
+            operator: row.operator || '',
+            title: row.title || '',
+            data_amount: row.data_amount || '',
+            minutes: parseInt(row.minutes) || 0,
+            validity_days: parseInt(row.validity_days) || 0,
+            selling_price: parseFloat(row.selling_price) || 0,
+            original_price: parseFloat(row.original_price) || undefined,
+            region: row.region || 'All Bangladesh',
+            category: row.category || 'data',
+            whatsapp_number: row.whatsapp_number || config.default_whatsapp || '+8801712345678',
+            description: row.description || ''
+          }));
+
           setParsedOffers(offers);
-          setUploadStatus(`Parsed ${offers.length} offers successfully`);
+
+          if (errors.length === 0) {
+            setUploadStatus(`✅ Parsed ${offers.length} offers successfully - Ready to upload!`);
+          }
+
           resolve(offers);
         } catch (error) {
-          setUploadStatus('Error parsing CSV file');
-          reject(new Error('Failed to parse CSV file'));
+          const errorMessage = error instanceof Error ? error.message : ERROR_MESSAGES.CSV_INVALID_FORMAT;
+          setUploadStatus(`❌ ${errorMessage}`);
+          setValidationErrors([]);
+          setParsedOffers([]);
+          reject(error);
         }
       };
-      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.onerror = () => {
+        const error = new Error(ERROR_MESSAGES.CSV_INVALID_FORMAT);
+        setUploadStatus(`❌ ${error.message}`);
+        reject(error);
+      };
       reader.readAsText(file);
     });
   };
@@ -160,6 +326,59 @@ const AdminPanel = () => {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Admin Controls Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-5 w-5" />
+              Admin Controls
+            </CardTitle>
+            <CardDescription>
+              Manage offers, export data, and control filters
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Button
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Filter size={16} />
+                Show Filters
+              </Button>
+
+              <Button
+                onClick={handleExportCSV}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Download size={16} />
+                Export CSV
+              </Button>
+
+              <Button
+                onClick={handleClearAllFilters}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Clear All Filters
+              </Button>
+            </div>
+
+            {/* Advanced Filters Section */}
+            {showAdvancedFilters && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+                <h4 className="font-semibold text-gray-900 mb-3">Advanced Filter Controls</h4>
+                <p className="text-sm text-gray-600">
+                  Advanced filtering options will be implemented here for admin use.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* CSV Upload Card */}
         <Card>
           <CardHeader>
@@ -172,6 +391,36 @@ const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* CSV Template Download */}
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Need help with CSV format?
+                <Button
+                  variant="link"
+                  className="p-0 h-auto ml-1 text-blue-600"
+                  onClick={downloadCSVTemplate}
+                >
+                  Download CSV Template
+                </Button>
+              </AlertDescription>
+            </Alert>
+
+            {/* Required Headers Info */}
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <h4 className="font-medium text-blue-900 mb-2">Required CSV Headers:</h4>
+              <div className="flex flex-wrap gap-1">
+                {CSV_HEADERS.REQUIRED.map(header => (
+                  <Badge key={header} variant="secondary" className="text-xs">
+                    {header}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs text-blue-700 mt-2">
+                Optional: {CSV_HEADERS.OPTIONAL.join(', ')}
+              </p>
+            </div>
+
             {/* File Drop Zone */}
             <div
               onDrop={handleDrop}
@@ -216,16 +465,61 @@ const AdminPanel = () => {
             {/* Upload Status */}
             {uploadStatus && (
               <div className={`p-3 rounded-lg border flex items-center gap-2 ${
-                uploadStatus.includes('Error') || uploadStatus.includes('failed')
+                uploadStatus.includes('❌') || uploadStatus.includes('Error') || uploadStatus.includes('failed')
                   ? 'bg-destructive/10 border-destructive text-destructive'
-                  : 'bg-success/10 border-success text-success'
+                  : uploadStatus.includes('✅')
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-yellow-50 border-yellow-200 text-yellow-800'
               }`}>
-                {uploadStatus.includes('Error') || uploadStatus.includes('failed') ? (
+                {uploadStatus.includes('❌') || uploadStatus.includes('Error') || uploadStatus.includes('failed') ? (
                   <XCircle className="h-4 w-4" />
-                ) : (
+                ) : uploadStatus.includes('✅') ? (
                   <CheckCircle className="h-4 w-4" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4" />
                 )}
                 <span className="body-sm">{uploadStatus}</span>
+              </div>
+            )}
+
+            {/* Validation Errors */}
+            {validationErrors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p className="font-medium">Found {validationErrors.length} validation errors:</p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {validationErrors.slice(0, 10).map((error, index) => (
+                        <div key={index} className="text-xs bg-red-50 p-2 rounded border">
+                          <strong>Row {error.row}:</strong> {error.message}
+                          <span className="text-gray-600"> (Field: {error.field}, Value: "{error.value}")</span>
+                        </div>
+                      ))}
+                      {validationErrors.length > 10 && (
+                        <p className="text-xs text-gray-600">... and {validationErrors.length - 10} more errors</p>
+                      )}
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* CSV Headers Info */}
+            {csvHeaders.length > 0 && (
+              <div className="bg-gray-50 p-3 rounded-lg border">
+                <h4 className="font-medium text-gray-900 mb-2">Detected CSV Headers:</h4>
+                <div className="flex flex-wrap gap-1">
+                  {csvHeaders.map(header => (
+                    <Badge
+                      key={header}
+                      variant={CSV_HEADERS.REQUIRED.includes(header.toLowerCase()) ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {header}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>
@@ -259,65 +553,141 @@ const AdminPanel = () => {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Parsed Offers ({parsedOffers.length})</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    Parsed Offers ({parsedOffers.length})
+                    {validationErrors.length === 0 && parsedOffers.length > 0 && (
+                      <Badge variant="default" className="bg-green-600">
+                        ✓ Valid
+                      </Badge>
+                    )}
+                    {validationErrors.length > 0 && (
+                      <Badge variant="destructive">
+                        {validationErrors.length} Errors
+                      </Badge>
+                    )}
+                  </CardTitle>
                   <CardDescription>
                     Review the offers before uploading to database
                   </CardDescription>
                 </div>
-                <Button
-                  onClick={uploadToDatabase}
-                  disabled={isUploading}
-                  className="min-w-[120px]"
-                >
-                  {isUploading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Uploading...
-                    </div>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload to DB
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setShowPreview(!showPreview)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    {showPreview ? 'Hide' : 'Show'} Preview
+                  </Button>
+                  <Button
+                    onClick={uploadToDatabase}
+                    disabled={isUploading || validationErrors.length > 0}
+                    className="min-w-[120px]"
+                  >
+                    {isUploading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Uploading...
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload to DB
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setParsedOffers([]);
+                      setValidationErrors([]);
+                      setCsvHeaders([]);
+                      setSelectedFile(null);
+                      setUploadStatus('');
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Clear
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2 border-b">Operator</th>
-                      <th className="text-left p-2 border-b">Title</th>
-                      <th className="text-left p-2 border-b">Data</th>
-                      <th className="text-left p-2 border-b">Minutes</th>
-                      <th className="text-left p-2 border-b">Validity</th>
-                      <th className="text-left p-2 border-b">Price</th>
-                      <th className="text-left p-2 border-b">Original</th>
-                      <th className="text-left p-2 border-b">Region</th>
-                      <th className="text-left p-2 border-b">Category</th>
-                      <th className="text-left p-2 border-b">WhatsApp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedOffers.map((offer, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="p-2 border-b">{offer.operator}</td>
-                        <td className="p-2 border-b">{offer.title}</td>
-                        <td className="p-2 border-b">{offer.data_amount}</td>
-                        <td className="p-2 border-b">{offer.minutes}</td>
-                        <td className="p-2 border-b">{offer.validity_days}d</td>
-                        <td className="p-2 border-b">৳{offer.selling_price}</td>
-                        <td className="p-2 border-b">৳{offer.original_price}</td>
-                        <td className="p-2 border-b">{offer.region}</td>
-                        <td className="p-2 border-b">{offer.category}</td>
-                        <td className="p-2 border-b">{offer.whatsapp_number}</td>
+              {showPreview && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="text-left p-3 border font-medium">Operator</th>
+                        <th className="text-left p-3 border font-medium">Title</th>
+                        <th className="text-left p-3 border font-medium">Data</th>
+                        <th className="text-left p-3 border font-medium">Minutes</th>
+                        <th className="text-left p-3 border font-medium">Validity</th>
+                        <th className="text-left p-3 border font-medium">Price</th>
+                        <th className="text-left p-3 border font-medium">Original</th>
+                        <th className="text-left p-3 border font-medium">Region</th>
+                        <th className="text-left p-3 border font-medium">Category</th>
+                        <th className="text-left p-3 border font-medium">WhatsApp</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {parsedOffers.slice(0, 10).map((offer, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="p-3 border">
+                            <Badge variant="outline" className={`${OPERATOR_COLORS[offer.operator as keyof typeof OPERATOR_COLORS] || 'bg-gray-500'} text-white border-0`}>
+                              {offer.operator}
+                            </Badge>
+                          </td>
+                          <td className="p-3 border max-w-[200px] truncate" title={offer.title}>
+                            {offer.title}
+                          </td>
+                          <td className="p-3 border font-medium">{offer.data_amount}</td>
+                          <td className="p-3 border">{offer.minutes || '-'}</td>
+                          <td className="p-3 border">{offer.validity_days}d</td>
+                          <td className="p-3 border font-bold text-green-600">৳{offer.selling_price}</td>
+                          <td className="p-3 border text-gray-500">
+                            {offer.original_price ? `৳${offer.original_price}` : '-'}
+                          </td>
+                          <td className="p-3 border text-sm">{offer.region || 'All Bangladesh'}</td>
+                          <td className="p-3 border">
+                            <Badge variant="secondary" className="text-xs">
+                              {offer.category || 'data'}
+                            </Badge>
+                          </td>
+                          <td className="p-3 border text-xs font-mono">
+                            {offer.whatsapp_number || 'Default'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {parsedOffers.length > 10 && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <p className="text-sm text-blue-800">
+                        Showing first 10 offers. Total: {parsedOffers.length} offers will be uploaded.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!showPreview && parsedOffers.length > 0 && (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed">
+                  <FileText className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+                  <p className="text-gray-600 mb-2">
+                    {parsedOffers.length} offers ready for upload
+                  </p>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowPreview(true)}
+                    className="text-blue-600"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview Data
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

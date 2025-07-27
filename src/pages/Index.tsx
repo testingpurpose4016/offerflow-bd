@@ -97,11 +97,12 @@ const Index = () => {
           return b.validity_days - a.validity_days;
         case "validity-low":
           return a.validity_days - b.validity_days;
-        case "data-high":
+        case "data-high": {
           // Simple data comparison (assumes GB format)
           const aData = parseFloat(a.data_amount.replace(/[^0-9.]/g, "")) || 0;
           const bData = parseFloat(b.data_amount.replace(/[^0-9.]/g, "")) || 0;
           return bData - aData;
+        }
         case "newest":
         default:
           return (
@@ -232,7 +233,7 @@ const Index = () => {
   );
 
   return (
-    <div className="mobile-container">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <AppHeader
         balance={balance}
@@ -242,35 +243,36 @@ const Index = () => {
         onComparisonClick={() => setShowComparisonModal(true)}
       />
 
-      {/* Search and Sort */}
-      <SearchAndSort
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        sortBy={sortBy}
-        onSortChange={setSortBy}
-        categoryFilter={categoryFilter}
-        onCategoryChange={setCategoryFilter}
-        priceRange={priceRange}
-        onPriceRangeChange={setPriceRange}
-        validityFilter={validityFilter}
-        onValidityFilterChange={setValidityFilter}
-        offers={filteredOffers}
-        showAdvanced={showAdvancedFilters}
-        onToggleAdvanced={() => setShowAdvancedFilters(!showAdvancedFilters)}
-      />
+      <div className="px-3 py-2 space-y-3">
+        {/* Search and Sort */}
+        <SearchAndSort
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          categoryFilter={categoryFilter}
+          onCategoryChange={setCategoryFilter}
+          priceRange={priceRange}
+          onPriceRangeChange={setPriceRange}
+          validityFilter={validityFilter}
+          onValidityFilterChange={setValidityFilter}
+          offers={filteredOffers}
+          showAdvanced={showAdvancedFilters}
+          onToggleAdvanced={() => setShowAdvancedFilters(!showAdvancedFilters)}
+        />
 
-      {/* Filter Tabs */}
-      <FilterTabs
-        activeFilter={activeFilter}
-        onFilterChange={handleFilterChange}
-        offerCounts={offerCounts}
-      />
+        {/* Filter Tabs */}
+        <FilterTabs
+          activeFilter={activeFilter}
+          onFilterChange={handleFilterChange}
+          offerCounts={offerCounts}
+        />
 
-      {/* Stats Bar */}
-      <StatsBar availableOffers={filteredOffers.length} />
+        {/* Stats Bar */}
+        <StatsBar availableOffers={filteredOffers.length} />
 
-      {/* Main Content */}
-      <main className="px-4 py-4 space-y-4">
+        {/* Main Content */}
+        <main className="space-y-3 pb-6">
         {isLoading ? (
           // Loading State
           <>
@@ -288,7 +290,7 @@ const Index = () => {
           />
         ) : (
           // Offers List
-          <>
+          <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
             {filteredOffers.map((offer) => (
               <OfferCard
                 key={offer.id}
@@ -302,7 +304,7 @@ const Index = () => {
                 canAddToComparison={comparison.length < 3}
               />
             ))}
-          </>
+          </div>
         )}
       </main>
 
@@ -342,6 +344,7 @@ const Index = () => {
           {config.support_email || "support@realdeals.com"}
         </p>
       </footer>
+      </div>
     </div>
   );
 };
