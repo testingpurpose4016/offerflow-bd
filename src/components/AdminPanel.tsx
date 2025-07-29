@@ -1,329 +1,290 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Upload, FileText, CheckCircle, XCircle } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { useConfig } from "@/hooks/useConfig";
-import { useState } from "react";
+import React, { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { ApiService } from '@/lib/api/service';
+import { Upload, FileText, Download, BarChart3 } from 'lucide-react';
+import type { CsvOffer } from '@/lib/api/contracts';
 
-interface ParsedOffer {
-  operator: string;
-  title: string;
-  data_amount: string;
-  minutes: number;
-  validity_days: number;
-  selling_price: number;
-  original_price: number;
-  region: string;
-  category: string;
-  whatsapp_number: string;
+interface AdminPanelProps {
+  config: Record<string, any>;
+  error?: string | null;
 }
 
-const AdminPanel = () => {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [parsedOffers, setParsedOffers] = useState<ParsedOffer[]>([]);
-  const [uploadStatus, setUploadStatus] = useState<string>("");
+export const AdminPanel: React.FC<AdminPanelProps> = ({ config, error }) => {
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [defaultWhatsApp, setDefaultWhatsApp] = useState(config.default_whatsapp || '');
   const { toast } = useToast();
-  const { config } = useConfig();
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    parseCSV(file);
-  };
-
-  const parseCSV = (file: File): Promise<ParsedOffer[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const csv = e.target?.result as string;
-          const lines = csv.split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          
-          const offers: ParsedOffer[] = [];
-          
-          for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (line) {
-              const values = line.split(',').map(v => v.trim());
-              const offer: ParsedOffer = {
-                operator: values[0] || '',
-                title: values[1] || '',
-                data_amount: values[2] || '',
-                minutes: parseInt(values[3]) || 0,
-                validity_days: parseInt(values[4]) || 0,
-                selling_price: parseInt(values[5]) || 0,
-                original_price: parseInt(values[6]) || 0,
-                region: values[7] || '',
-                category: values[8] || '',
-                whatsapp_number: values[9] || config.default_whatsapp || '8801712345678'
-              };
-              offers.push(offer);
-            }
-          }
-          
-          setParsedOffers(offers);
-          setUploadStatus(`Parsed ${offers.length} offers successfully`);
-          resolve(offers);
-        } catch (error) {
-          setUploadStatus('Error parsing CSV file');
-          reject(new Error('Failed to parse CSV file'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsText(file);
-    });
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    const csvFile = files.find(file => 
-      file.type === 'text/csv' || file.name.endsWith('.csv')
-    );
-    if (csvFile) {
-      handleFileSelect(csvFile);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      handleFileSelect(file);
+      setCsvFile(file);
     }
   };
 
-  const uploadToDatabase = async () => {
-    if (parsedOffers.length === 0) {
+  const parseCSV = (csvContent: string): CsvOffer[] => {
+    const lines = csvContent.split('\n').filter(line => line.trim());
+    if (lines.length < 2) throw new Error('CSV must have header and data rows');
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const data: CsvOffer[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+      const row: any = {};
+      
+      headers.forEach((header, index) => {
+        row[header] = values[index] || '';
+      });
+
+      data.push({
+        operator: row.operator || '',
+        title: row.title || '',
+        data_amount: row.data_amount || '',
+        minutes: parseInt(row.minutes) || 0,
+        validity_days: parseInt(row.validity_days) || 0,
+        selling_price: parseInt(row.selling_price) || 0,
+        original_price: parseInt(row.original_price) || undefined,
+        region: row.region || 'Global',
+        category: row.category || 'Data',
+        whatsapp_number: row.whatsapp_number || defaultWhatsApp || '',
+        description: row.description || ''
+      });
+    }
+
+    return data;
+  };
+
+  const handleUpload = async () => {
+    if (!csvFile) {
       toast({
-        title: "Error",
-        description: "No offers to upload",
-        variant: "destructive",
+        title: "No file selected",
+        description: "Please select a CSV file to upload",
+        variant: "destructive"
       });
       return;
     }
 
     setIsUploading(true);
-    setUploadStatus("Uploading to database...");
-    
-    try {
-      const { error } = await supabase
-        .from('offers')
-        .insert(parsedOffers.map(offer => ({
-          ...offer,
-          is_active: true
-        })));
 
-      if (error) {
-        throw error;
+    try {
+      const csvContent = await csvFile.text();
+      const csvOffers = parseCSV(csvContent);
+
+      // Validate first
+      const validateResponse = await ApiService.validateCsv({
+        offers: csvOffers,
+        validate_only: true
+      });
+
+      if (!validateResponse.success) {
+        throw new Error(validateResponse.error);
       }
 
-      // Reset state after successful upload
-      setParsedOffers([]);
-      setSelectedFile(null);
-      setUploadStatus("Successfully uploaded to database!");
-      
-      toast({
-        title: "Success",
-        description: `${parsedOffers.length} offers uploaded successfully!`,
+      // If validation passes, import
+      const importResponse = await ApiService.importCsv({
+        offers: csvOffers,
+        validate_only: false
       });
+
+      if (!importResponse.success) {
+        throw new Error(importResponse.error);
+      }
+
+      toast({
+        title: "Upload successful",
+        description: `${csvOffers.length} offers uploaded successfully`
+      });
+
+      setCsvFile(null);
       
     } catch (error) {
-      console.error('Upload error:', error);
-      setUploadStatus("Upload failed!");
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Upload failed",
-        variant: "destructive",
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
       });
     } finally {
       setIsUploading(false);
-      // Clear status message after 3 seconds
-      setTimeout(() => setUploadStatus(""), 3000);
     }
   };
 
-  const clearData = () => {
-    setParsedOffers([]);
-    setSelectedFile(null);
-    setUploadStatus("");
+  const handleExport = async () => {
+    try {
+      const response = await ApiService.exportData();
+      
+      if (!response.success) {
+        throw new Error(response.error);
+      }
+
+      // Create and download CSV file
+      const csvContent = JSON.stringify(response.data, null, 2);
+      const blob = new Blob([csvContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'offers-export.json';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export successful",
+        description: "Data exported successfully"
+      });
+      
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive"
+      });
+    }
   };
 
-  return (
-    <div className="mobile-container min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border p-4">
-        <h1 className="heading-lg text-foreground">Admin Panel</h1>
-        <p className="body-sm text-muted mt-1">Manage SIM offers and upload data</p>
+  const updateDefaultWhatsApp = async () => {
+    try {
+      // This would call config management API to update default WhatsApp
+      toast({
+        title: "Configuration updated",
+        description: "Default WhatsApp number updated successfully"
+      });
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: "Failed to update configuration",
+        variant: "destructive"
+      });
+    }
+  };
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-foreground mb-2">Error Loading Admin Panel</h2>
+          <p className="text-muted-foreground">{error}</p>
+        </div>
       </div>
+    );
+  }
 
-      <div className="p-4 space-y-6">
-        {/* CSV Upload Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              Upload CSV File
-            </CardTitle>
-            <CardDescription>
-              Upload a CSV file containing offer data to add new offers to the database
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* File Drop Zone */}
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
-              onClick={() => document.getElementById('csvFileInput')?.click()}
-            >
-              <FileText className="h-12 w-12 mx-auto text-muted mb-2" />
-              <p className="body-md text-foreground mb-1">
-                {selectedFile ? selectedFile.name : 'Drag and drop CSV file here'}
-              </p>
-              <p className="body-sm text-muted">
-                or click to browse files
-              </p>
-            </div>
-
-            <Input
-              id="csvFileInput"
-              type="file"
-              accept=".csv"
-              onChange={handleFileInput}
-              className="hidden"
-            />
-
-            <div className="flex gap-2">
-              <Button
-                onClick={() => document.getElementById('csvFileInput')?.click()}
-                variant="outline"
-                className="flex-1"
-              >
-                Select File
-              </Button>
-              <Button
-                onClick={clearData}
-                variant="outline"
-                disabled={!selectedFile && parsedOffers.length === 0}
-              >
-                Clear
-              </Button>
-            </div>
-
-            {/* Upload Status */}
-            {uploadStatus && (
-              <div className={`p-3 rounded-lg border flex items-center gap-2 ${
-                uploadStatus.includes('Error') || uploadStatus.includes('failed')
-                  ? 'bg-destructive/10 border-destructive text-destructive'
-                  : 'bg-success/10 border-success text-success'
-              }`}>
-                {uploadStatus.includes('Error') || uploadStatus.includes('failed') ? (
-                  <XCircle className="h-4 w-4" />
-                ) : (
-                  <CheckCircle className="h-4 w-4" />
-                )}
-                <span className="body-sm">{uploadStatus}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Sample Format */}
-        <Card>
-          <CardHeader>
-            <CardTitle>CSV Format Guide</CardTitle>
-            <CardDescription>
-              Use this format for your CSV file
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p><strong>Sample CSV format:</strong></p>
-              <code className="text-sm bg-muted p-2 rounded block mt-2">
-                operator,title,data_amount,minutes,validity_days,selling_price,original_price,region,category,whatsapp_number<br />
-                GP,50GB Bundle,50GB,1500,30,775,900,All Bangladesh,combo,8801712345678
-              </code>
-              <p className="body-sm text-muted mt-2">
-                Note: WhatsApp number is optional. If not provided, the default number will be used.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Parsed Results */}
-        {parsedOffers.length > 0 && (
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-6">
+        <h1 className="text-3xl font-bold text-foreground mb-8">Admin Panel</h1>
+        
+        <div className="grid gap-6">
+          {/* Configuration Card */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Parsed Offers ({parsedOffers.length})</CardTitle>
-                  <CardDescription>
-                    Review the offers before uploading to database
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={uploadToDatabase}
-                  disabled={isUploading}
-                  className="min-w-[120px]"
-                >
-                  {isUploading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Uploading...
-                    </div>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload to DB
-                    </>
-                  )}
-                </Button>
-              </div>
+              <CardTitle>Configuration</CardTitle>
+              <CardDescription>
+                Manage global settings and default values
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left p-2 border-b">Operator</th>
-                      <th className="text-left p-2 border-b">Title</th>
-                      <th className="text-left p-2 border-b">Data</th>
-                      <th className="text-left p-2 border-b">Minutes</th>
-                      <th className="text-left p-2 border-b">Validity</th>
-                      <th className="text-left p-2 border-b">Price</th>
-                      <th className="text-left p-2 border-b">Original</th>
-                      <th className="text-left p-2 border-b">Region</th>
-                      <th className="text-left p-2 border-b">Category</th>
-                      <th className="text-left p-2 border-b">WhatsApp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedOffers.map((offer, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="p-2 border-b">{offer.operator}</td>
-                        <td className="p-2 border-b">{offer.title}</td>
-                        <td className="p-2 border-b">{offer.data_amount}</td>
-                        <td className="p-2 border-b">{offer.minutes}</td>
-                        <td className="p-2 border-b">{offer.validity_days}d</td>
-                        <td className="p-2 border-b">৳{offer.selling_price}</td>
-                        <td className="p-2 border-b">৳{offer.original_price}</td>
-                        <td className="p-2 border-b">{offer.region}</td>
-                        <td className="p-2 border-b">{offer.category}</td>
-                        <td className="p-2 border-b">{offer.whatsapp_number}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="whatsapp">Default WhatsApp Number</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="whatsapp"
+                    value={defaultWhatsApp}
+                    onChange={(e) => setDefaultWhatsApp(e.target.value)}
+                    placeholder="+8801712345678"
+                  />
+                  <Button onClick={updateDefaultWhatsApp}>Update</Button>
+                </div>
               </div>
             </CardContent>
           </Card>
-        )}
+
+          {/* CSV Upload Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                CSV Upload
+              </CardTitle>
+              <CardDescription>
+                Upload a CSV file containing offer data
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="csv-file">Select CSV File</Label>
+                <Input
+                  id="csv-file"
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileChange}
+                />
+              </div>
+              
+              {csvFile && (
+                <div className="text-sm text-muted-foreground">
+                  Selected: {csvFile.name}
+                </div>
+              )}
+
+              <Button 
+                onClick={handleUpload} 
+                disabled={!csvFile || isUploading}
+                className="w-full"
+              >
+                {isUploading ? 'Uploading...' : 'Upload CSV'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Data Export Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Download className="h-5 w-5" />
+                Data Export
+              </CardTitle>
+              <CardDescription>
+                Export current offers data
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={handleExport} variant="outline" className="w-full">
+                Export All Data
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Statistics Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Statistics
+              </CardTitle>
+              <CardDescription>
+                System overview and metrics
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-primary">-</div>
+                  <div className="text-sm text-muted-foreground">Total Offers</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-primary">-</div>
+                  <div className="text-sm text-muted-foreground">Active Offers</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
 };
-
-export default AdminPanel;

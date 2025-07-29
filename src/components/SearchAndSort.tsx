@@ -3,7 +3,7 @@ import { Search, SlidersHorizontal, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { exportToCSV } from "@/lib/utils";
-import { type Offer } from "@/hooks/useOffers";
+import { type Offer } from "@/lib/api/contracts";
 
 interface SearchAndSortProps {
   searchTerm: string;
@@ -60,19 +60,19 @@ const SearchAndSort = ({
   };
 
   return (
-    <div className="bg-background border-b border-border p-4 space-y-4">
+    <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-3 shadow-sm">
       {/* Search Bar */}
       <div className="relative">
         <Search
-          className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground"
-          size={16}
+          className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+          size={18}
         />
         <Input
           type="text"
-          placeholder="Search offers by title or operator..."
+          placeholder="Search offers..."
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="pl-10 pr-4"
+          className="pl-11 pr-4 h-12 text-base border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
 
@@ -88,15 +88,7 @@ const SearchAndSort = ({
           {showAdvanced ? "Hide Filters" : "Show Filters"}
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExportCSV}
-          className="flex items-center gap-2"
-        >
-          <Download size={14} />
-          Export CSV
-        </Button>
+
 
         <Button
           variant="outline"
