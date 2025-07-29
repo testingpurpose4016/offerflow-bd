@@ -1,6 +1,6 @@
 import { X, MessageCircle, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { type Offer } from "@/hooks/useOffers";
+import { type Offer } from "@/lib/api/contracts";
 
 interface ComparisonModalProps {
   isOpen: boolean;

@@ -1,6 +1,6 @@
 import { X, MessageCircle, Phone, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { type Offer } from "@/hooks/useOffers";
+import { type Offer } from "@/lib/api/contracts";
 import OfferCard from "./OfferCard";
 
 interface FavoritesModalProps {

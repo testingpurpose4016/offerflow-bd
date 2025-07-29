@@ -3,7 +3,7 @@ import { Search, SlidersHorizontal, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { exportToCSV } from "@/lib/utils";
-import { type Offer } from "@/hooks/useOffers";
+import { type Offer } from "@/lib/api/contracts";
 
 interface SearchAndSortProps {
   searchTerm: string;
