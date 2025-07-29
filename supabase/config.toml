@@ -1,1 +1,19 @@
 project_id = "zpsujubgenvmzzetfpac"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[functions.offers-management]
+verify_jwt = false
+
+[functions.config-management]
+verify_jwt = false
+
+[functions.csv-import]
+verify_jwt = false
+
+[functions.data-export]
+verify_jwt = false

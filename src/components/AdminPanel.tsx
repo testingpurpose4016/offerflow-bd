@@ -11,7 +11,7 @@ import { useConfig } from "@/hooks/useConfig";
 import { useOffers } from "@/hooks/useOffers";
 import { exportToCSV } from "@/lib/utils";
 import { useState } from "react";
-import { CSV_HEADERS, CSV_TEMPLATE, ERROR_MESSAGES, SUCCESS_MESSAGES, OPERATORS, VALIDATION } from "@/constants";
+import { CSV_HEADERS, CSV_TEMPLATE, ERROR_MESSAGES, SUCCESS_MESSAGES, OPERATORS, VALIDATION, OPERATOR_COLORS } from "@/constants";
 
 interface ParsedOffer {
   operator: string;
@@ -278,7 +278,16 @@ const AdminPanel = () => {
       const { error } = await supabase
         .from('offers')
         .insert(parsedOffers.map(offer => ({
-          ...offer,
+          operator: offer.operator,
+          title: offer.title,
+          data_amount: offer.data_amount,
+          minutes: offer.minutes,
+          validity_days: offer.validity_days,
+          selling_price: offer.selling_price,
+          original_price: offer.original_price || offer.selling_price,
+          region: offer.region || 'Global',
+          category: offer.category || 'Data',
+          whatsapp_number: offer.whatsapp_number || config.default_whatsapp,
           is_active: true
         })));
 
@@ -513,7 +522,7 @@ const AdminPanel = () => {
                   {csvHeaders.map(header => (
                     <Badge
                       key={header}
-                      variant={CSV_HEADERS.REQUIRED.includes(header.toLowerCase()) ? "default" : "secondary"}
+                      variant={CSV_HEADERS.REQUIRED.includes(header.toLowerCase() as any) ? "default" : "secondary"}
                       className="text-xs"
                     >
                       {header}
@@ -635,7 +644,7 @@ const AdminPanel = () => {
                       {parsedOffers.slice(0, 10).map((offer, index) => (
                         <tr key={index} className="hover:bg-gray-50">
                           <td className="p-3 border">
-                            <Badge variant="outline" className={`${OPERATOR_COLORS[offer.operator as keyof typeof OPERATOR_COLORS] || 'bg-gray-500'} text-white border-0`}>
+                            <Badge variant="outline" className="text-white border-0 bg-primary">
                               {offer.operator}
                             </Badge>
                           </td>
